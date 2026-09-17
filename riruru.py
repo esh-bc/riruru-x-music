@@ -846,7 +846,6 @@ async def cb_close(_, cq: CallbackQuery):
     except Exception:
         pass
     await cq.answer()
-    )
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 #  HELP callbacks
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
