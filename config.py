@@ -32,9 +32,9 @@ DEVELOPER     = "@iam_eshh"
 DEVELOPER_URL = "https://t.me/iam_eshh"
 
 # ── Support links ────────────────────────────────────────────
-SUPPORT_CHANNEL = getenv("SUPPORT_CHANNEL", "https://t.me/TheTeamHacker")
-SUPPORT_CHAT    = getenv("SUPPORT_CHAT",    "https://t.me/about_Maahi_XD")
-UPSTREAM_REPO   = getenv("UPSTREAM_REPO",  "https://github.com/TheAloneTeam/AloneMusic")
+SUPPORT_CHANNEL = getenv("SUPPORT_CHANNEL", "")
+SUPPORT_CHAT    = getenv("SUPPORT_CHAT",    "")
+UPSTREAM_REPO   = getenv("UPSTREAM_REPO",  "")
 UPSTREAM_BRANCH = getenv("UPSTREAM_BRANCH", "master")
 
 # ── Assistant sessions ───────────────────────────────────────
