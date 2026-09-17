@@ -45,9 +45,13 @@ from pyrogram.enums import ParseMode, ChatMemberStatus, ChatType
 # ── PyTgCalls ────────────────────────────────────────────────────
 from pytgcalls import PyTgCalls
 from pytgcalls.types import MediaStream
-from pytgcalls.exceptions import (
-    NoActiveGroupCall, GroupCallNotFound, AlreadyJoinedError,
-)
+from pytgcalls.exceptions import NoActiveGroupCall
+
+try:
+    from pytgcalls.exceptions import GroupCallNotFound, AlreadyJoinedError
+except ImportError:
+    GroupCallNotFound = None
+    AlreadyJoinedError = None
 
 # ── Spotify ──────────────────────────────────────────────────────
 try:
