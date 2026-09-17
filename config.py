@@ -10,15 +10,15 @@ from pyrogram import filters
 load_dotenv()
 
 # ── Telegram API ─────────────────────────────────────────────
-API_ID   = int(getenv("API_ID",  0))
-API_HASH = getenv("API_HASH",    "")
-BOT_TOKEN = getenv("BOT_TOKEN",  "")
+API_ID   = int(getenv("API_ID",  30439917))
+API_HASH = getenv("API_HASH",    "4f408081dbb976a9943ada5b551288b7")
+BOT_TOKEN = getenv("BOT_TOKEN",  "8719204270:AAHT9f7YlaQOBvjHYfeDUZ3AAhluBz_tFSg")
 
 # ── MongoDB ──────────────────────────────────────────────────
 MONGO_DB_URI = getenv("MONGO_DB_URI", "")
 
 # ── Owner & Admins ───────────────────────────────────────────
-OWNER_ID  = int(getenv("OWNER_ID",  0))
+OWNER_ID  = int(getenv("OWNER_ID",  8189708860))
 LOGGER_ID = int(getenv("LOGGER_ID", 0))
 # Comma-separated extra admin IDs e.g. "123,456"
 _raw = getenv("ADMIN_IDS", "")
