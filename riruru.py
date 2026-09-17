@@ -701,6 +701,7 @@ def _np_text(track: dict, chat_id: int) -> str:
         f"<b>Loop :</b>  {looped}   <b>Shuffle :</b>  {shuffled}   "
         f"<b>Volume :</b>  {vol}%"
         f"</blockquote>"
+    )
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 #  PyTgCalls EVENT: stream ended → auto play next
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
