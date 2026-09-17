@@ -601,12 +601,9 @@ async def _build_stream(track: dict) -> MediaStream | None:
         return None
     vidmode = track.get("vidmode", False)
     if vidmode:
-        return MediaStream(stream_url, video_flags=MediaStream.Flags.IGNORE_PENDING)
+        return MediaStream(stream_url)
     else:
-        return MediaStream(
-            stream_url,
-            video_flags=MediaStream.Flags.NO_VIDEO,
-        )
+        return MediaStream(stream_url)
 
 async def play_next(chat_id: int):
     """
