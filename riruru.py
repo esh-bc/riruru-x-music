@@ -846,3 +846,1138 @@ async def cb_close(_, cq: CallbackQuery):
         pass
     await cq.answer()
     )
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+#  HELP callbacks
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+HELP_MUSIC = (
+    "<b>Music Commands</b>\n\n"
+    "<blockquote expandable>"
+    "/play [name or link]  —  Play audio in VC\n"
+    "/vplay [name or link]  —  Play video in VC\n"
+    "/pause  —  Pause playback\n"
+    "/resume  —  Resume playback\n"
+    "/skip  —  Skip current track\n"
+    "/stop  —  Stop and leave VC\n"
+    "/queue  —  Show current queue\n"
+    "/np  —  Now playing info\n"
+    "/loop  —  Toggle loop mode\n"
+    "/shuffle  —  Toggle shuffle\n"
+    "/volume [0-200]  —  Set volume\n"
+    "/seek [seconds]  —  Seek to position\n"
+    "/lyrics [song]  —  Fetch lyrics\n"
+    "/search [query]  —  Search YouTube\n"
+    "/playlist [name or link]  —  Queue a playlist"
+    "</blockquote>"
+)
+
+HELP_ADMIN = (
+    "<b>Admin Commands</b>\n\n"
+    "<blockquote expandable>"
+    "/auth [@user]  —  Authorise user for bot controls\n"
+    "/unauth [@user]  —  Remove authorisation\n"
+    "/ban [@user]  —  Ban user from bot\n"
+    "/unban [@user]  —  Unban user\n"
+    "/broadcast [text]  —  Broadcast to all served chats\n"
+    "/addvc  —  Add VC assistant via OTP\n"
+    "/listvc  —  List active VC accounts\n"
+    "/rmvc [phone]  —  Remove VC account\n"
+    "/addfsub  —  Add force-subscribe channel\n"
+    "/rmfsub  —  Remove force-subscribe channel\n"
+    "/listfsub  —  List force-subscribe channels\n"
+    "/adminpanel  —  Open admin panel"
+    "</blockquote>"
+)
+
+HELP_STATS = (
+    "<b>Stats &amp; Info</b>\n\n"
+    "<blockquote>"
+    "/ping  —  Bot latency\n"
+    "/stats  —  Bot resource usage\n"
+    "/uptime  —  How long bot has been running\n"
+    "/repo  —  Source code link"
+    "</blockquote>"
+)
+
+HELP_AI = (
+    "<b>AI Features</b>\n\n"
+    "<blockquote>"
+    "/lyrics [song]  —  AI-enhanced lyrics lookup\n"
+    "/ask [question]  —  Ask the AI anything\n"
+    "/recommend  —  Get song recommendations"
+    "</blockquote>"
+)
+
+HELP_VC = (
+    "<b>VC &amp; Settings</b>\n\n"
+    "<blockquote>"
+    "/joinvc  —  Make assistant join VC\n"
+    "/leavevc  —  Make assistant leave VC\n"
+    "/loop  —  Toggle track loop\n"
+    "/shuffle  —  Toggle queue shuffle\n"
+    "/volume [0-200]  —  Adjust volume\n"
+    "/seek [sec]  —  Seek position\n"
+    "/votemode  —  Toggle vote-skip mode\n"
+    "/autoclean  —  Toggle auto-clean messages"
+    "</blockquote>"
+)
+
+_help_map = {
+    "help_main":     (HELP_MUSIC,  help_kb()),
+    "help_music":    (HELP_MUSIC,  help_kb()),
+    "help_admin":    (HELP_ADMIN,  help_kb()),
+    "help_stats":    (HELP_STATS,  help_kb()),
+    "help_ai":       (HELP_AI,     help_kb()),
+    "help_vc":       (HELP_VC,     help_kb()),
+}
+
+@bot.on_callback_query(filters.regex(r"^help_(main|music|admin|stats|ai|vc)$"))
+async def cb_help(_, cq: CallbackQuery):
+    key = cq.data
+    text, markup = _help_map.get(key, (HELP_MUSIC, help_kb()))
+    try:
+        await cq.message.edit_text(
+            text, reply_markup=markup, parse_mode=ParseMode.HTML,
+        )
+    except MessageNotModified:
+        pass
+    await cq.answer()
+
+@bot.on_message(filters.command("help"))
+async def cmd_help(_, msg: Message):
+    await msg.reply(
+        HELP_MUSIC,
+        reply_markup=help_kb(),
+        parse_mode=ParseMode.HTML,
+    )
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+#  /play  and  /vplay
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+async def _handle_play(client: Client, msg: Message, vidmode: bool):
+    cid = msg.chat.id
+    uid = msg.from_user.id if msg.from_user else 0
+
+    if not await check_auth(client, msg):
+        return await msg.reply(
+            "<blockquote>You are not authorised to use playback controls here.</blockquote>",
+            parse_mode=ParseMode.HTML,
+        )
+
+    args = msg.text.split(None, 1)
+    query = args[1].strip() if len(args) > 1 else ""
+
+    # Telegram audio/video file
+    if msg.reply_to_message:
+        replied = msg.reply_to_message
+        audio = replied.audio or replied.voice or replied.video or replied.document
+        if audio:
+            if audio.file_size > (TG_VIDEO_FILESIZE_LIMIT if vidmode else TG_AUDIO_FILESIZE_LIMIT):
+                return await msg.reply(
+                    "<blockquote>File size exceeds the allowed limit.</blockquote>",
+                    parse_mode=ParseMode.HTML,
+                )
+            wait = await msg.reply(
+                "<blockquote>Downloading from Telegram…</blockquote>",
+                parse_mode=ParseMode.HTML,
+            )
+            path = await replied.download()
+            await wait.delete()
+            track = {
+                "title":          audio.file_name or "Telegram File",
+                "url":            path,
+                "stream_url":     path,
+                "duration":       getattr(audio, "duration", 0) or 0,
+                "thumb":          START_IMG_URL,
+                "requester_id":   uid,
+                "requester_name": msg.from_user.first_name if msg.from_user else "User",
+                "source":         "Telegram",
+                "vidmode":        vidmode,
+            }
+            _q(cid).append(track)
+            if not _active.get(cid):
+                await play_next(cid)
+            else:
+                await msg.reply(
+                    f"<blockquote>Added to queue: <b>{track['title']}</b></blockquote>",
+                    parse_mode=ParseMode.HTML,
+                )
+            return
+
+    if not query:
+        return await msg.reply(
+            "<blockquote>Usage: <code>/play song name or link</code></blockquote>",
+            parse_mode=ParseMode.HTML,
+        )
+
+    wait = await msg.reply(
+        "<blockquote>Searching…</blockquote>",
+        parse_mode=ParseMode.HTML,
+    )
+
+    tracks = []
+
+    # Spotify
+    if "spotify.com" in query:
+        tracks = await spotify_resolve(query)
+        source = "Spotify"
+    # YouTube playlist
+    elif "youtube.com/playlist" in query or "list=" in query:
+        results = await yt_search(query)
+        tracks  = results[:PLAYLIST_FETCH_LIMIT]
+        source  = "YouTube"
+    # SoundCloud
+    elif "soundcloud.com" in query:
+        resolved = await sc_resolve(query)
+        if resolved:
+            tracks = [resolved]
+        source = "SoundCloud"
+    # YouTube URL or search
+    else:
+        if re.match(r"https?://", query):
+            resolved = await yt_resolve(query, video=vidmode)
+            if resolved:
+                tracks = [resolved]
+        else:
+            results = await yt_search(query)
+            if results:
+                tracks = [results[0]]
+        source = "YouTube"
+
+    await wait.delete()
+
+    if not tracks:
+        return await msg.reply(
+            "<blockquote>No results found. Please try a different query.</blockquote>",
+            parse_mode=ParseMode.HTML,
+        )
+
+    req_name = msg.from_user.first_name if msg.from_user else "User"
+    for t in tracks:
+        t.setdefault("requester_id",   uid)
+        t.setdefault("requester_name", req_name)
+        t.setdefault("source",         source)
+        t.setdefault("vidmode",        vidmode)
+        t.setdefault("thumb",          START_IMG_URL)
+        _q(cid).append(t)
+
+    if not _active.get(cid):
+        await play_next(cid)
+    else:
+        if len(tracks) == 1:
+            await msg.reply(
+                f"<blockquote>Added to queue: <b>{tracks[0]['title']}</b></blockquote>",
+                parse_mode=ParseMode.HTML,
+            )
+        else:
+            await msg.reply(
+                f"<blockquote>Added <b>{len(tracks)}</b> tracks to queue.</blockquote>",
+                parse_mode=ParseMode.HTML,
+            )
+
+@bot.on_message(filters.command("play") & filters.group)
+async def cmd_play(client: Client, msg: Message):
+    await _handle_play(client, msg, vidmode=False)
+
+@bot.on_message(filters.command("vplay") & filters.group)
+async def cmd_vplay(client: Client, msg: Message):
+    await _handle_play(client, msg, vidmode=True)
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+#  PLAYBACK CONTROL COMMANDS
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+@bot.on_message(filters.command("pause") & filters.group)
+async def cmd_pause(client: Client, msg: Message):
+    cid = msg.chat.id
+    if not await check_auth(client, msg):
+        return await msg.reply("<blockquote>Not authorised.</blockquote>", parse_mode=ParseMode.HTML)
+    if not _active.get(cid):
+        return await msg.reply("<blockquote>Nothing is playing.</blockquote>", parse_mode=ParseMode.HTML)
+    call = _get_call(cid)
+    if call:
+        try:
+            await call.pause_stream(cid)
+            _paused[cid] = True
+            await msg.reply("<blockquote><b>Paused.</b></blockquote>", parse_mode=ParseMode.HTML)
+        except Exception as exc:
+            await msg.reply(f"<blockquote>Error: {exc}</blockquote>", parse_mode=ParseMode.HTML)
+
+@bot.on_message(filters.command("resume") & filters.group)
+async def cmd_resume(client: Client, msg: Message):
+    cid = msg.chat.id
+    if not await check_auth(client, msg):
+        return await msg.reply("<blockquote>Not authorised.</blockquote>", parse_mode=ParseMode.HTML)
+    call = _get_call(cid)
+    if call and _paused.get(cid):
+        try:
+            await call.resume_stream(cid)
+            _paused[cid] = False
+            await msg.reply("<blockquote><b>Resumed.</b></blockquote>", parse_mode=ParseMode.HTML)
+        except Exception as exc:
+            await msg.reply(f"<blockquote>Error: {exc}</blockquote>", parse_mode=ParseMode.HTML)
+
+@bot.on_message(filters.command("skip") & filters.group)
+async def cmd_skip(client: Client, msg: Message):
+    cid = msg.chat.id
+    if not await check_auth(client, msg):
+        return await msg.reply("<blockquote>Not authorised.</blockquote>", parse_mode=ParseMode.HTML)
+    if not _active.get(cid):
+        return await msg.reply("<blockquote>Nothing is playing.</blockquote>", parse_mode=ParseMode.HTML)
+    await msg.reply("<blockquote>Skipped.</blockquote>", parse_mode=ParseMode.HTML)
+    await play_next(cid)
+
+@bot.on_message(filters.command("stop") & filters.group)
+async def cmd_stop(client: Client, msg: Message):
+    cid = msg.chat.id
+    if not await check_auth(client, msg):
+        return await msg.reply("<blockquote>Not authorised.</blockquote>", parse_mode=ParseMode.HTML)
+    _queue.pop(cid, None)
+    _np.pop(cid, None)
+    await _leave_vc(cid)
+    await msg.reply("<blockquote><b>Stopped.</b> Left the voice chat.</blockquote>", parse_mode=ParseMode.HTML)
+
+@bot.on_message(filters.command("loop") & filters.group)
+async def cmd_loop(client: Client, msg: Message):
+    cid = msg.chat.id
+    if not await check_auth(client, msg):
+        return await msg.reply("<blockquote>Not authorised.</blockquote>", parse_mode=ParseMode.HTML)
+    _loop[cid] = not _loop.get(cid, False)
+    state = "enabled" if _loop[cid] else "disabled"
+    await msg.reply(f"<blockquote>Loop <b>{state}</b>.</blockquote>", parse_mode=ParseMode.HTML)
+
+@bot.on_message(filters.command("shuffle") & filters.group)
+async def cmd_shuffle(client: Client, msg: Message):
+    cid = msg.chat.id
+    if not await check_auth(client, msg):
+        return await msg.reply("<blockquote>Not authorised.</blockquote>", parse_mode=ParseMode.HTML)
+    _shuffle[cid] = not _shuffle.get(cid, False)
+    state = "enabled" if _shuffle[cid] else "disabled"
+    await msg.reply(f"<blockquote>Shuffle <b>{state}</b>.</blockquote>", parse_mode=ParseMode.HTML)
+
+@bot.on_message(filters.command("volume") & filters.group)
+async def cmd_volume(client: Client, msg: Message):
+    cid = msg.chat.id
+    if not await check_auth(client, msg):
+        return await msg.reply("<blockquote>Not authorised.</blockquote>", parse_mode=ParseMode.HTML)
+    args = msg.text.split()
+    if len(args) < 2 or not args[1].isdigit():
+        return await msg.reply(
+            f"<blockquote>Current volume: <b>{_volume.get(cid, 100)}%</b>\n"
+            "Usage: <code>/volume 0–200</code></blockquote>",
+            parse_mode=ParseMode.HTML,
+        )
+    vol = max(0, min(200, int(args[1])))
+    _volume[cid] = vol
+    call = _get_call(cid)
+    if call:
+        try:
+            await call.change_volume_call(cid, vol)
+        except Exception:
+            pass
+    await msg.reply(f"<blockquote>Volume set to <b>{vol}%</b>.</blockquote>", parse_mode=ParseMode.HTML)
+
+@bot.on_message(filters.command("seek") & filters.group)
+async def cmd_seek(client: Client, msg: Message):
+    cid = msg.chat.id
+    if not await check_auth(client, msg):
+        return await msg.reply("<blockquote>Not authorised.</blockquote>", parse_mode=ParseMode.HTML)
+    args = msg.text.split()
+    if len(args) < 2 or not args[1].lstrip("-").isdigit():
+        return await msg.reply(
+            "<blockquote>Usage: <code>/seek [seconds]</code></blockquote>",
+            parse_mode=ParseMode.HTML,
+        )
+    sec = int(args[1])
+    call = _get_call(cid)
+    if call and _np.get(cid):
+        try:
+            await call.seek_stream(cid, sec)
+            await msg.reply(
+                f"<blockquote>Seeked to <b>{fmt_time(sec)}</b>.</blockquote>",
+                parse_mode=ParseMode.HTML,
+            )
+        except Exception as exc:
+            await msg.reply(f"<blockquote>Seek failed: {exc}</blockquote>", parse_mode=ParseMode.HTML)
+
+@bot.on_message(filters.command(["np", "nowplaying"]) & filters.group)
+async def cmd_np(_, msg: Message):
+    cid  = msg.chat.id
+    track = _np.get(cid)
+    if not track:
+        return await msg.reply(
+            "<blockquote>Nothing is playing right now.</blockquote>",
+            parse_mode=ParseMode.HTML,
+        )
+    elapsed = int(time.time() - _start_t.get(cid, time.time()))
+    total   = track.get("duration", 0)
+    bar     = progress_bar(elapsed, total)
+    text    = (
+        f"<b>Now Playing</b>\n\n"
+        f"<blockquote>"
+        f"<b>{track.get('title','Unknown')}</b>\n\n"
+        f"<code>{fmt_time(elapsed)}</code>  {bar}  <code>{fmt_time(total)}</code>\n\n"
+        f"<b>Source :</b>  {track.get('source','YouTube')}\n"
+        f"<b>Requested by :</b>  {track.get('requester_name','—')}"
+        f"</blockquote>"
+    )
+    await msg.reply_photo(
+        photo=track.get("thumb", START_IMG_URL),
+        caption=text,
+        reply_markup=player_kb(cid),
+        parse_mode=ParseMode.HTML,
+    )
+
+@bot.on_message(filters.command("queue") & filters.group)
+async def cmd_queue(_, msg: Message):
+    cid = msg.chat.id
+    q   = _q(cid)
+    if not q and not _np.get(cid):
+        return await msg.reply(
+            "<blockquote>Queue is empty.</blockquote>",
+            parse_mode=ParseMode.HTML,
+        )
+    lines = []
+    if _np.get(cid):
+        lines.append(f"<b>Now Playing:</b>\n  {_np[cid].get('title','?')}  [{fmt_time(_np[cid].get('duration',0))}]")
+    if q:
+        lines.append("<b>Up Next:</b>")
+        for i, t in enumerate(q[:20], 1):
+            lines.append(f"  {i}.  {t.get('title','?')}  [{fmt_time(t.get('duration',0))}]")
+        if len(q) > 20:
+            lines.append(f"  … and {len(q)-20} more")
+    await msg.reply(
+        "<blockquote>" + "\n".join(lines) + "</blockquote>",
+        parse_mode=ParseMode.HTML,
+    )
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+#  PLAYER CALLBACK BUTTONS
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+@bot.on_callback_query(filters.regex(r"^vc_(pause|resume|skip|end|loopon|loopoff|shufon|shufoff|vdown|vup|queue|np)$"))
+async def cb_player(client: Client, cq: CallbackQuery):
+    cid = cq.message.chat.id
+    uid = cq.from_user.id
+    act = cq.data
+
+    if not await check_auth(client, cq.message):
+        return await cq.answer("You are not authorised.", show_alert=True)
+
+    call = _get_call(cid)
+
+    if act == "vc_pause":
+        if call and _active.get(cid) and not _paused.get(cid):
+            await call.pause_stream(cid)
+            _paused[cid] = True
+        await cq.answer("Paused.")
+
+    elif act == "vc_resume":
+        if call and _paused.get(cid):
+            await call.resume_stream(cid)
+            _paused[cid] = False
+        await cq.answer("Resumed.")
+
+    elif act == "vc_skip":
+        await cq.answer("Skipping…")
+        await play_next(cid)
+        return
+
+    elif act == "vc_end":
+        _queue.pop(cid, None)
+        _np.pop(cid, None)
+        await _leave_vc(cid)
+        try:
+            await cq.message.edit_caption(
+                caption="<blockquote><b>Stream ended.</b></blockquote>",
+                parse_mode=ParseMode.HTML,
+            )
+        except Exception:
+            pass
+        return await cq.answer("Stopped.")
+
+    elif act == "vc_loopon":
+        _loop[cid] = True
+        await cq.answer("Loop enabled.")
+
+    elif act == "vc_loopoff":
+        _loop[cid] = False
+        await cq.answer("Loop disabled.")
+
+    elif act == "vc_shufon":
+        _shuffle[cid] = True
+        await cq.answer("Shuffle enabled.")
+
+    elif act == "vc_shufoff":
+        _shuffle[cid] = False
+        await cq.answer("Shuffle disabled.")
+
+    elif act == "vc_vdown":
+        vol = max(0, _volume.get(cid, 100) - 10)
+        _volume[cid] = vol
+        if call:
+            try:
+                await call.change_volume_call(cid, vol)
+            except Exception:
+                pass
+        await cq.answer(f"Volume: {vol}%")
+
+    elif act == "vc_vup":
+        vol = min(200, _volume.get(cid, 100) + 10)
+        _volume[cid] = vol
+        if call:
+            try:
+                await call.change_volume_call(cid, vol)
+            except Exception:
+                pass
+        await cq.answer(f"Volume: {vol}%")
+
+    elif act == "vc_queue":
+        q = _q(cid)
+        if not q and not _np.get(cid):
+            return await cq.answer("Queue is empty.", show_alert=True)
+        lines = []
+        if _np.get(cid):
+            lines.append(f"Now Playing: {_np[cid].get('title','?')}")
+        for i, t in enumerate(q[:10], 1):
+            lines.append(f"{i}. {t.get('title','?')}")
+        return await cq.answer("\n".join(lines), show_alert=True)
+
+    elif act == "vc_np":
+        track = _np.get(cid)
+        if not track:
+            return await cq.answer("Nothing playing.", show_alert=True)
+        elapsed = int(time.time() - _start_t.get(cid, time.time()))
+        total   = track.get("duration", 0)
+        bar     = progress_bar(elapsed, total)
+        return await cq.answer(
+            f"{track.get('title','?')}\n{fmt_time(elapsed)} {bar} {fmt_time(total)}",
+            show_alert=True,
+        )
+
+    # Refresh button markup after any state change
+    track = _np.get(cid)
+    if track:
+        try:
+            await cq.message.edit_caption(
+                caption=_np_text(track, cid),
+                reply_markup=player_kb(cid),
+                parse_mode=ParseMode.HTML,
+            )
+        except MessageNotModified:
+            pass
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+#  ADMIN COMMANDS
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+@bot.on_message(filters.command("adminpanel"))
+async def cmd_adminpanel(client: Client, msg: Message):
+    if not is_sudo(msg.from_user.id if msg.from_user else 0):
+        return await msg.reply(
+            "<blockquote>Only bot admins can access the admin panel.</blockquote>",
+            parse_mode=ParseMode.HTML,
+        )
+    await msg.reply(
+        "<b>Admin Panel</b>\n\n"
+        "<blockquote>Select an action below.</blockquote>",
+        reply_markup=admin_kb(),
+        parse_mode=ParseMode.HTML,
+    )
+
+@bot.on_callback_query(filters.regex(r"^adm_"))
+async def cb_admin(client: Client, cq: CallbackQuery):
+    uid = cq.from_user.id
+    if not is_sudo(uid):
+        return await cq.answer("Not authorised.", show_alert=True)
+    act = cq.data
+
+    if act == "adm_addvc":
+        await cq.answer()
+        await cq.message.reply(
+            "<blockquote>"
+            "Send the phone number of the assistant account you want to add.\n\n"
+            "Format: <code>+91XXXXXXXXXX</code>\n\n"
+            "The bot will send an OTP to that number via Telegram."
+            "</blockquote>",
+            parse_mode=ParseMode.HTML,
+        )
+        return
+
+    elif act == "adm_listvc":
+        sessions = await get_vc_sessions()
+        if not sessions:
+            return await cq.answer("No VC accounts added.", show_alert=True)
+        lines = [f"{d.get('name','?')}  ({d.get('phone','?')})" for d in sessions]
+        await cq.answer("\n".join(lines), show_alert=True)
+
+    elif act == "adm_addfsub":
+        await cq.answer()
+        await cq.message.reply(
+            "<blockquote>"
+            "Send the channel username or ID to add as force-subscribe.\n\n"
+            "The bot must be an admin in that channel with "
+            "<b>Invite Users via Link</b> permission."
+            "</blockquote>",
+            parse_mode=ParseMode.HTML,
+        )
+
+    elif act == "adm_rmfsub":
+        channels = await get_fsub_channels()
+        if not channels:
+            return await cq.answer("No force-sub channels configured.", show_alert=True)
+        rows = [(f"Remove: {c.get('title','?')}", f"rmfsub_{c['cid']}") for c in channels]
+        await cq.message.reply(
+            "<blockquote>Select channel to remove:</blockquote>",
+            reply_markup=kb(*[[r] for r in rows]),
+            parse_mode=ParseMode.HTML,
+        )
+        await cq.answer()
+
+    elif act == "adm_broadcast":
+        await cq.answer()
+        await cq.message.reply(
+            "<blockquote>Reply to this message with the text you want to broadcast to all served chats.</blockquote>",
+            parse_mode=ParseMode.HTML,
+        )
+
+    elif act == "adm_ban":
+        await cq.answer()
+        await cq.message.reply(
+            "<blockquote>Send the user ID to ban.\nFormat: <code>/ban USER_ID [reason]</code></blockquote>",
+            parse_mode=ParseMode.HTML,
+        )
+
+    elif act == "adm_unban":
+        await cq.answer()
+        await cq.message.reply(
+            "<blockquote>Send: <code>/unban USER_ID</code></blockquote>",
+            parse_mode=ParseMode.HTML,
+        )
+
+    elif act == "adm_stats":
+        cpu  = psutil.cpu_percent()
+        ram  = psutil.virtual_memory()
+        disk = psutil.disk_usage("/")
+        uptime_s = int(time.time() - _BOT_START)
+        text = (
+            "<b>Bot Statistics</b>\n\n"
+            "<blockquote>"
+            f"<b>CPU :</b>  {cpu}%\n"
+            f"<b>RAM :</b>  {ram.percent}%  "
+            f"({humanize.naturalsize(ram.used)} / {humanize.naturalsize(ram.total)})\n"
+            f"<b>Disk :</b>  {disk.percent}%  "
+            f"({humanize.naturalsize(disk.used)} / {humanize.naturalsize(disk.total)})\n"
+            f"<b>Uptime :</b>  {fmt_time(uptime_s)}\n"
+            f"<b>Active VCs :</b>  {len(_active)}\n"
+            f"<b>Assistants :</b>  {len(assistants)}"
+            "</blockquote>"
+        )
+        await cq.message.reply(text, parse_mode=ParseMode.HTML)
+        await cq.answer()
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+#  AUTH / BAN / BROADCAST / PING / STATS  commands
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+@bot.on_message(filters.command("auth") & filters.group)
+async def cmd_auth(client: Client, msg: Message):
+    if not await is_chat_admin(client, msg.chat.id, msg.from_user.id if msg.from_user else 0):
+        return await msg.reply("<blockquote>Only admins can authorise users.</blockquote>", parse_mode=ParseMode.HTML)
+    target = None
+    if msg.reply_to_message and msg.reply_to_message.from_user:
+        target = msg.reply_to_message.from_user
+    elif len(msg.command) > 1:
+        try:
+            target = await client.get_users(msg.command[1].lstrip("@"))
+        except Exception:
+            pass
+    if not target:
+        return await msg.reply("<blockquote>Specify a user: reply or <code>/auth @username</code></blockquote>", parse_mode=ParseMode.HTML)
+    await add_auth(msg.chat.id, target.id)
+    await msg.reply(
+        f"<blockquote><b>{target.first_name}</b> is now authorised to use bot controls.</blockquote>",
+        parse_mode=ParseMode.HTML,
+    )
+
+@bot.on_message(filters.command("unauth") & filters.group)
+async def cmd_unauth(client: Client, msg: Message):
+    if not await is_chat_admin(client, msg.chat.id, msg.from_user.id if msg.from_user else 0):
+        return await msg.reply("<blockquote>Only admins can remove authorisation.</blockquote>", parse_mode=ParseMode.HTML)
+    target = None
+    if msg.reply_to_message and msg.reply_to_message.from_user:
+        target = msg.reply_to_message.from_user
+    elif len(msg.command) > 1:
+        try:
+            target = await client.get_users(msg.command[1].lstrip("@"))
+        except Exception:
+            pass
+    if not target:
+        return await msg.reply("<blockquote>Specify a user.</blockquote>", parse_mode=ParseMode.HTML)
+    await rm_auth(msg.chat.id, target.id)
+    await msg.reply(
+        f"<blockquote><b>{target.first_name}</b> has been unauthorised.</blockquote>",
+        parse_mode=ParseMode.HTML,
+    )
+
+@bot.on_message(filters.command("ban"))
+async def cmd_ban(client: Client, msg: Message):
+    if not is_sudo(msg.from_user.id if msg.from_user else 0):
+        return await msg.reply("<blockquote>Only bot admins can ban users.</blockquote>", parse_mode=ParseMode.HTML)
+    args = msg.text.split(None, 2)
+    if len(args) < 2:
+        return await msg.reply("<blockquote>Usage: <code>/ban USER_ID [reason]</code></blockquote>", parse_mode=ParseMode.HTML)
+    try:
+        uid    = int(args[1])
+        reason = args[2] if len(args) > 2 else "No reason given"
+        await ban_user(uid, reason)
+        await msg.reply(
+            f"<blockquote>User <code>{uid}</code> has been banned.\nReason: {reason}</blockquote>",
+            parse_mode=ParseMode.HTML,
+        )
+    except Exception as exc:
+        await msg.reply(f"<blockquote>Error: {exc}</blockquote>", parse_mode=ParseMode.HTML)
+
+@bot.on_message(filters.command("unban"))
+async def cmd_unban(client: Client, msg: Message):
+    if not is_sudo(msg.from_user.id if msg.from_user else 0):
+        return await msg.reply("<blockquote>Only bot admins can unban users.</blockquote>", parse_mode=ParseMode.HTML)
+    args = msg.text.split()
+    if len(args) < 2:
+        return await msg.reply("<blockquote>Usage: <code>/unban USER_ID</code></blockquote>", parse_mode=ParseMode.HTML)
+    try:
+        uid = int(args[1])
+        await unban_user(uid)
+        await msg.reply(f"<blockquote>User <code>{uid}</code> has been unbanned.</blockquote>", parse_mode=ParseMode.HTML)
+    except Exception as exc:
+        await msg.reply(f"<blockquote>Error: {exc}</blockquote>", parse_mode=ParseMode.HTML)
+
+@bot.on_message(filters.command("broadcast"))
+async def cmd_broadcast(client: Client, msg: Message):
+    if not is_sudo(msg.from_user.id if msg.from_user else 0):
+        return await msg.reply("<blockquote>Only bot admins can broadcast.</blockquote>", parse_mode=ParseMode.HTML)
+    text = msg.text.split(None, 1)
+    if len(text) < 2:
+        return await msg.reply(
+            "<blockquote>Usage: <code>/broadcast Your message here</code></blockquote>",
+            parse_mode=ParseMode.HTML,
+        )
+    btext  = text[1]
+    chats  = await all_served()
+    sent   = 0
+    failed = 0
+    info   = await msg.reply(
+        f"<blockquote>Broadcasting to <b>{len(chats)}</b> chats…</blockquote>",
+        parse_mode=ParseMode.HTML,
+    )
+    for cid in chats:
+        try:
+            await client.send_message(cid, btext, parse_mode=ParseMode.HTML)
+            sent += 1
+        except FloodWait as e:
+            await asyncio.sleep(e.value)
+            try:
+                await client.send_message(cid, btext, parse_mode=ParseMode.HTML)
+                sent += 1
+            except Exception:
+                failed += 1
+        except Exception:
+            failed += 1
+        await asyncio.sleep(0.05)
+    await info.edit_text(
+        f"<blockquote>Broadcast complete.\n<b>Sent:</b> {sent}  <b>Failed:</b> {failed}</blockquote>",
+        parse_mode=ParseMode.HTML,
+    )
+
+@bot.on_message(filters.command("ping"))
+async def cmd_ping(_, msg: Message):
+    start = time.time()
+    m = await msg.reply("<blockquote>Pinging…</blockquote>", parse_mode=ParseMode.HTML)
+    end   = time.time()
+    ms    = round((end - start) * 1000, 2)
+    await m.edit_text(
+        f"<blockquote><b>Pong!</b>  <code>{ms} ms</code></blockquote>",
+        parse_mode=ParseMode.HTML,
+    )
+
+@bot.on_message(filters.command(["stats", "uptime"]))
+async def cmd_stats(_, msg: Message):
+    cpu    = psutil.cpu_percent(interval=0.5)
+    ram    = psutil.virtual_memory()
+    disk   = psutil.disk_usage("/")
+    uptime = int(time.time() - _BOT_START)
+    text   = (
+        "<b>Bot Statistics</b>\n\n"
+        "<blockquote>"
+        f"<b>CPU :</b>  {cpu}%\n"
+        f"<b>RAM :</b>  {ram.percent}%  "
+        f"({humanize.naturalsize(ram.used)} / {humanize.naturalsize(ram.total)})\n"
+        f"<b>Disk :</b>  {disk.percent}%  "
+        f"({humanize.naturalsize(disk.used)} / {humanize.naturalsize(disk.total)})\n"
+        f"<b>Uptime :</b>  {fmt_time(uptime)}\n"
+        f"<b>Active VCs :</b>  {len(_active)}\n"
+        f"<b>Assistants :</b>  {len(assistants)}\n"
+        f"<b>Python :</b>  {sys.version.split()[0]}"
+        "</blockquote>"
+    )
+    await msg.reply(text, parse_mode=ParseMode.HTML)
+
+# ── rmfsub callback ───────────────────────────────────────────────
+@bot.on_callback_query(filters.regex(r"^rmfsub_(-?\d+)$"))
+async def cb_rmfsub(_, cq: CallbackQuery):
+    if not is_sudo(cq.from_user.id):
+        return await cq.answer("Not authorised.", show_alert=True)
+    cid = int(cq.data.split("_")[1])
+    await rm_fsub(cid)
+    await cq.answer("Removed.", show_alert=True)
+    try:
+        await cq.message.delete()
+    except Exception:
+        pass
+
+# ── cmd_stats callback ────────────────────────────────────────────
+@bot.on_callback_query(filters.regex("^cmd_stats$"))
+async def cb_stats(_, cq: CallbackQuery):
+    cpu  = psutil.cpu_percent(interval=0.5)
+    ram  = psutil.virtual_memory()
+    text = (
+        f"CPU: {cpu}%  |  RAM: {ram.percent}%  |  "
+        f"Active VCs: {len(_active)}"
+    )
+    await cq.answer(text, show_alert=True)
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+#  OTP VC ACCOUNT ADD — admin flow via DM conversation
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# State machine stored in-memory: {user_id: {step, phone, client}}
+_otp_state: dict[int, dict] = {}
+
+@bot.on_message(filters.command("addvc") & filters.private)
+async def cmd_addvc(_, msg: Message):
+    uid = msg.from_user.id
+    if not is_sudo(uid):
+        return await msg.reply(
+            "<blockquote>Only bot admins can add VC accounts.</blockquote>",
+            parse_mode=ParseMode.HTML,
+        )
+    _otp_state[uid] = {"step": "phone"}
+    await msg.reply(
+        "<b>Add VC Assistant Account</b>\n\n"
+        "<blockquote>"
+        "Send the phone number of the Telegram account you want to use as assistant.\n\n"
+        "Format: <code>+91XXXXXXXXXX</code>"
+        "</blockquote>",
+        parse_mode=ParseMode.HTML,
+    )
+
+@bot.on_message(filters.private & filters.text & ~filters.command([
+    "start","help","ping","stats","ban","unban","broadcast",
+    "adminpanel","addvc","listvc","rmvc","addfsub","rmfsub","listfsub",
+]))
+async def otp_conversation(_, msg: Message):
+    uid  = msg.from_user.id
+    state = _otp_state.get(uid)
+    if not state:
+        return
+
+    step = state.get("step")
+
+    if step == "phone":
+        phone = msg.text.strip()
+        if not re.match(r"^\+\d{7,15}$", phone):
+            return await msg.reply(
+                "<blockquote>Invalid format. Use: <code>+91XXXXXXXXXX</code></blockquote>",
+                parse_mode=ParseMode.HTML,
+            )
+        state["phone"] = phone
+        tmp_client = Client(
+            f"otp_session_{uid}",
+            api_id=API_ID,
+            api_hash=API_HASH,
+        )
+        state["client"] = tmp_client
+        try:
+            await tmp_client.connect()
+            sent = await tmp_client.send_code(phone)
+            state["phone_code_hash"] = sent.phone_code_hash
+            state["step"] = "otp"
+            await msg.reply(
+                "<blockquote>"
+                "OTP sent to that number via Telegram.\n"
+                "Send the OTP code here.\n\n"
+                "<b>Format:</b>  <code>1 2 3 4 5</code>  (with spaces)"
+                "</blockquote>",
+                parse_mode=ParseMode.HTML,
+            )
+        except Exception as exc:
+            await tmp_client.disconnect()
+            del _otp_state[uid]
+            await msg.reply(
+                f"<blockquote>Failed to send OTP: <code>{exc}</code></blockquote>",
+                parse_mode=ParseMode.HTML,
+            )
+
+    elif step == "otp":
+        code = msg.text.strip().replace(" ", "")
+        phone = state["phone"]
+        tmp_client = state["client"]
+        phone_code_hash = state.get("phone_code_hash", "")
+        try:
+            await tmp_client.sign_in(phone, phone_code_hash, code)
+            me = await tmp_client.get_me()
+            session_string = await tmp_client.export_session_string()
+            await tmp_client.disconnect()
+            name = f"{me.first_name or ''} {me.last_name or ''}".strip()
+            await save_vc_session(phone, session_string, name)
+            # Dynamically add as new assistant
+            new_client = Client(
+                f"RiRuAsst_dyn_{len(assistants)+1}",
+                api_id=API_ID,
+                api_hash=API_HASH,
+                session_string=session_string,
+            )
+            await new_client.start()
+            new_idx = len(assistants)
+            assistants.append(new_client)
+            call = PyTgCalls(new_client)
+            _register_call_handlers(call)
+            await call.start()
+            _calls[new_idx] = call
+            del _otp_state[uid]
+            await msg.reply(
+                f"<blockquote>"
+                f"<b>{name}</b> (<code>{phone}</code>) added as VC assistant.\n"
+                f"Total assistants: <b>{len(assistants)}</b>"
+                f"</blockquote>",
+                parse_mode=ParseMode.HTML,
+            )
+        except Exception as exc:
+            await tmp_client.disconnect()
+            await msg.reply(
+                f"<blockquote>Sign-in failed: <code>{exc}</code>\nTry again with /addvc</blockquote>",
+                parse_mode=ParseMode.HTML,
+            )
+            del _otp_state[uid]
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+#  ADD / LIST / REMOVE force-subscribe channels
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+@bot.on_message(filters.command("addfsub"))
+async def cmd_addfsub(client: Client, msg: Message):
+    if not is_sudo(msg.from_user.id if msg.from_user else 0):
+        return await msg.reply("<blockquote>Only bot admins can do this.</blockquote>", parse_mode=ParseMode.HTML)
+    args = msg.text.split()
+    if len(args) < 2:
+        return await msg.reply(
+            "<blockquote>Usage: <code>/addfsub @username or channel_id</code></blockquote>",
+            parse_mode=ParseMode.HTML,
+        )
+    raw = args[1]
+    try:
+        chat = await client.get_chat(int(raw) if raw.lstrip("-").isdigit() else raw)
+        try:
+            invite = await client.export_chat_invite_link(chat.id)
+        except Exception:
+            invite = f"https://t.me/{chat.username}" if chat.username else ""
+        await add_fsub(chat.id, invite, chat.title)
+        await msg.reply(
+            f"<blockquote><b>{chat.title}</b> added as force-subscribe channel.\n"
+            f"Invite: {invite}</blockquote>",
+            parse_mode=ParseMode.HTML,
+        )
+    except Exception as exc:
+        await msg.reply(f"<blockquote>Error: {exc}</blockquote>", parse_mode=ParseMode.HTML)
+
+@bot.on_message(filters.command("listfsub"))
+async def cmd_listfsub(_, msg: Message):
+    if not is_sudo(msg.from_user.id if msg.from_user else 0):
+        return
+    channels = await get_fsub_channels()
+    if not channels:
+        return await msg.reply("<blockquote>No force-sub channels configured.</blockquote>", parse_mode=ParseMode.HTML)
+    lines = [f"{c.get('title','?')}  (<code>{c['cid']}</code>)" for c in channels]
+    await msg.reply(
+        "<b>Force-Subscribe Channels</b>\n\n<blockquote>" + "\n".join(lines) + "</blockquote>",
+        parse_mode=ParseMode.HTML,
+    )
+
+@bot.on_message(filters.command("rmfsub"))
+async def cmd_rmfsub(client: Client, msg: Message):
+    if not is_sudo(msg.from_user.id if msg.from_user else 0):
+        return
+    args = msg.text.split()
+    if len(args) < 2:
+        return await msg.reply("<blockquote>Usage: <code>/rmfsub channel_id</code></blockquote>", parse_mode=ParseMode.HTML)
+    try:
+        cid = int(args[1])
+        await rm_fsub(cid)
+        await msg.reply(f"<blockquote>Channel <code>{cid}</code> removed from force-sub list.</blockquote>", parse_mode=ParseMode.HTML)
+    except Exception as exc:
+        await msg.reply(f"<blockquote>Error: {exc}</blockquote>", parse_mode=ParseMode.HTML)
+
+@bot.on_message(filters.command("listvc"))
+async def cmd_listvc(_, msg: Message):
+    if not is_sudo(msg.from_user.id if msg.from_user else 0):
+        return
+    sessions = await get_vc_sessions()
+    if not sessions:
+        return await msg.reply("<blockquote>No VC accounts added yet.</blockquote>", parse_mode=ParseMode.HTML)
+    lines = [f"{d.get('name','?')}  (<code>{d.get('phone','?')}</code>)  added {d.get('added','?')[:10]}" for d in sessions]
+    await msg.reply(
+        "<b>VC Assistant Accounts</b>\n\n<blockquote>" + "\n".join(lines) + "</blockquote>",
+        parse_mode=ParseMode.HTML,
+    )
+
+@bot.on_message(filters.command("rmvc"))
+async def cmd_rmvc(_, msg: Message):
+    if not is_sudo(msg.from_user.id if msg.from_user else 0):
+        return
+    args = msg.text.split()
+    if len(args) < 2:
+        return await msg.reply("<blockquote>Usage: <code>/rmvc +phone</code></blockquote>", parse_mode=ParseMode.HTML)
+    phone = args[1]
+    await remove_vc_session(phone)
+    await msg.reply(f"<blockquote>Session for <code>{phone}</code> removed from DB.\nRestart bot for changes to take effect.</blockquote>", parse_mode=ParseMode.HTML)
+
+@bot.on_message(filters.command(["joinvc"]) & filters.group)
+async def cmd_joinvc(client: Client, msg: Message):
+    if not await check_auth(client, msg):
+        return await msg.reply("<blockquote>Not authorised.</blockquote>", parse_mode=ParseMode.HTML)
+    await msg.reply("<blockquote>Use /play to start playing — the bot joins automatically.</blockquote>", parse_mode=ParseMode.HTML)
+
+@bot.on_message(filters.command("leavevc") & filters.group)
+async def cmd_leavevc(client: Client, msg: Message):
+    cid = msg.chat.id
+    if not await check_auth(client, msg):
+        return await msg.reply("<blockquote>Not authorised.</blockquote>", parse_mode=ParseMode.HTML)
+    _queue.pop(cid, None)
+    await _leave_vc(cid)
+    await msg.reply("<blockquote>Left the voice chat.</blockquote>", parse_mode=ParseMode.HTML)
+
+@bot.on_message(filters.command("repo"))
+async def cmd_repo(_, msg: Message):
+    await msg.reply(
+        f"<blockquote><b>Source Code</b>\n\n"
+        f"<a href='{UPSTREAM_REPO}'>View on GitHub</a>\n"
+        f"Developer: <a href='{DEVELOPER_URL}'>{DEVELOPER}</a></blockquote>",
+        parse_mode=ParseMode.HTML,
+    )
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+#  LYRICS (via lyrics.ovh fallback)
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+@bot.on_message(filters.command("lyrics"))
+async def cmd_lyrics(_, msg: Message):
+    args = msg.text.split(None, 1)
+    query = args[1].strip() if len(args) > 1 else ""
+    if not query and _np.get(msg.chat.id):
+        query = _np[msg.chat.id].get("title", "")
+    if not query:
+        return await msg.reply(
+            "<blockquote>Usage: <code>/lyrics song name</code></blockquote>",
+            parse_mode=ParseMode.HTML,
+        )
+    wait = await msg.reply("<blockquote>Fetching lyrics…</blockquote>", parse_mode=ParseMode.HTML)
+    try:
+        parts = query.split(None, 1)
+        artist = parts[0] if len(parts) > 1 else "Unknown"
+        title  = parts[1] if len(parts) > 1 else parts[0]
+        async with httpx.AsyncClient(timeout=10) as hx:
+            r = await hx.get(f"https://api.lyrics.ovh/v1/{artist}/{title}")
+        if r.status_code == 200:
+            data = r.json()
+            lyr  = data.get("lyrics", "").strip()
+            if lyr:
+                # Telegram max message length is 4096
+                lyr = lyr[:3500]
+                await wait.edit_text(
+                    f"<b>Lyrics — {query}</b>\n\n"
+                    f"<blockquote expandable>{lyr}</blockquote>",
+                    parse_mode=ParseMode.HTML,
+                )
+                return
+    except Exception:
+        pass
+    await wait.edit_text(
+        "<blockquote>Could not find lyrics for that song.</blockquote>",
+        parse_mode=ParseMode.HTML,
+    )
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+#  MAIN STARTUP
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+_BOT_START = time.time()
+
+async def main():
+    await init_db()
+    keep_alive()
+
+    LOG.info("Starting bot client…")
+    await bot.start()
+    me = await bot.get_me()
+    LOG.info(f"Bot started: @{me.username}")
+
+    LOG.info(f"Starting {len(assistants)} assistant(s)…")
+    for idx, asst in enumerate(assistants):
+        try:
+            await asst.start()
+            call = PyTgCalls(asst)
+            _register_call_handlers(call)
+            await call.start()
+            _calls[idx] = call
+            ame = await asst.get_me()
+            LOG.info(f"  Assistant {idx+1}: @{ame.username}")
+        except Exception as exc:
+            LOG.error(f"  Assistant {idx+1} failed: {exc}")
+
+    # Load saved VC sessions from DB and start them
+    for sess_data in await get_vc_sessions():
+        phone   = sess_data.get("phone", "")
+        session = sess_data.get("session", "")
+        name    = sess_data.get("name", phone)
+        if not session:
+            continue
+        try:
+            dyn = Client(
+                f"RiRuDyn_{phone[-4:]}",
+                api_id=API_ID,
+                api_hash=API_HASH,
+                session_string=session,
+            )
+            await dyn.start()
+            idx = len(assistants)
+            assistants.append(dyn)
+            call = PyTgCalls(dyn)
+            _register_call_handlers(call)
+            await call.start()
+            _calls[idx] = call
+            LOG.info(f"  Loaded saved VC account: {name} ({phone})")
+        except Exception as exc:
+            LOG.error(f"  Failed to load VC account {phone}: {exc}")
+
+    if LOGGER_ID:
+        try:
+            await bot.send_message(
+                LOGGER_ID,
+                f"<blockquote><b>𝐑𝐢𝐑𝐮𝐑𝐮 𝐌𝐮𝐬𝐢𝐜</b> started.\n"
+                f"Assistants: {len(assistants)}\n"
+                f"Time: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC</blockquote>",
+                parse_mode=ParseMode.HTML,
+            )
+        except Exception:
+            pass
+
+    LOG.info("RiRuRu Music is running. Press Ctrl+C to stop.")
+    await idle()
+
+    # Graceful shutdown
+    LOG.info("Shutting down…")
+    for idx, call in _calls.items():
+        try:
+            await call.stop()
+        except Exception:
+            pass
+    for asst in assistants:
+        try:
+            await asst.stop()
+        except Exception:
+            pass
+    await bot.stop()
+
+if __name__ == "__main__":
+    asyncio.run(main())
